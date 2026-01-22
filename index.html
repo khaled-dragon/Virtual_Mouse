@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navy Blue Air-Mouse - Python Logic</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+
+    <style>
+        body {
+            background-color: #000080; /* Navy Blue */
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+        }
+
+        #video-container {
+            position: relative;
+            margin-top: 20px;
+            width: 800px;
+            height: 450px;
+            border: 5px solid rgba(255, 255, 255, 0.2);
+            border-radius: 40px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #webcam {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* Mirror Effect for Camera */
+            object-fit: cover;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* Mirror dots to match camera */
+            pointer-events: none;
+        }
+
+        #virtual-cursor {
+            width: 25px;
+            height: 25px;
+            background: #FFD700;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            position: absolute;
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        .shape {
+            position: absolute;
+            z-index: 10;
+        }
+
+        .square { width: 100px; height: 100px; background: #4682B4; top: 50px; left: 50px; border-radius: 10px; }
+        .triangle { 
+            width: 0; height: 0; 
+            border-left: 60px solid transparent; border-right: 60px solid transparent;
+            border-bottom: 100px solid #5F9EA0; top: 50px; left: 200px; 
+        }
+        .dragging { filter: brightness(1.2); box-shadow: 0 0 20px #FFD700; transform: scale(1.1); }
+    </style>
+</head>
+<body>
+
+    <h1 style="margin-top: 10px;">Python Logic Web Mouse</h1>
+
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+        <div id="virtual-cursor"></div>
+        
+        <div id="obj1" class="shape square"></div>
+        <div id="obj2" class="shape triangle"></div>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const cursor = document.getElementById('virtual-cursor');
+        const container = document.getElementById('video-container');
+        const shapes = document.querySelectorAll('.shape');
+
+        let isGrabbing = false;
+        let activeElement = null;
+
+        function onResults(results) {
+            // Adjust canvas size
+            canvasElement.width = container.clientWidth;
+            canvasElement.height = container.clientHeight;
+            
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    // Draw RED points like your Python code
+                    for (const lm of landmarks) {
+                        canvasCtx.beginPath();
+                        canvasCtx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, 4, 0, 2 * Math.PI);
+                        canvasCtx.fillStyle = "red";
+                        canvasCtx.fill();
+                    }
+
+                    // Index Finger (ID 8) logic
+                    const index = landmarks[8];
+                    const thumb = landmarks[4];
+
+                    // Correcting direction: (1 - x) to move right when hand moves right
+                    const screenX = (1 - index.x) * window.innerWidth;
+                    const screenY = index.y * window.innerHeight;
+                    
+                    // Container Relative coordinates for Dragging
+                    const relX = (1 - index.x) * container.clientWidth;
+                    const relY = index.y * container.clientHeight;
+
+                    cursor.style.left = `${relX}px`;
+                    cursor.style.top = `${relY}px`;
+
+                    // Python Distance Logic: dist = y2 - y1
+                    // Multiply by 500 to match your Python dist < 40 threshold
+                    const dist = (thumb.y - index.y) * 500;
+
+                    if (dist < 40) { 
+                        if (!isGrabbing) attemptGrab(relX, relY);
+                        if (activeElement) moveElement(relX, relY);
+                        cursor.style.background = "#00FF00";
+                    } else {
+                        releaseGrab();
+                        cursor.style.background = "#FFD700";
+                    }
+                }
+            }
+            canvasCtx.restore();
+        }
+
+        function attemptGrab(x, y) {
+            shapes.forEach(shape => {
+                const rect = shape.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+                const localX = x + containerRect.left;
+                const localY = y + containerRect.top;
+
+                if (localX >= rect.left && localX <= rect.right && localY >= rect.top && localY <= rect.bottom) {
+                    isGrabbing = true;
+                    activeElement = shape;
+                    shape.classList.add('dragging');
+                }
+            });
+        }
+
+        function moveElement(x, y) {
+            if (activeElement) {
+                activeElement.style.left = `${x - 50}px`;
+                activeElement.style.top = `${y - 50}px`;
+            }
+        }
+
+        function releaseGrab() {
+            if (activeElement) activeElement.classList.remove('dragging');
+            isGrabbing = false;
+            activeElement = null;
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 1280, height: 720
+        });
+        camera.start();
+    </script>
+</body>
+</html>
